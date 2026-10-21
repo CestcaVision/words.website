@@ -1,4 +1,5 @@
 @echo off
+rem Windows CMD launcher. Keep CRLF line endings.
 chcp 65001 >nul
 cd /d "%~dp0"
 where node >nul 2>nul

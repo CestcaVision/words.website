@@ -1,5 +1,9 @@
 # 实际验证结果
 
+## 启动故障修复补充（2026-10-21）
+
+复现用户问题：3000 端口无法连接，`cmd.exe /d /c 启动网站.bat` 返回 `The syntax of the command is incorrect.`。三个批处理文件的工作区内容为 LF，尽管 Git 属性已声明 CRLF，属性不会自动改写已有工作文件。将三个文件实际转换为无 BOM 的 CRLF 后，同一命令正常启动，首页 HTTP 200，状态接口显示真实 `data/vocabflow.sqlite` 路径。已验证端口被自身实例占用时显示清楚提示，未结束任何未知进程。新增启动脚本换行回归测试并通过。保留启动实例供用户访问。浏览器视觉与 macOS 验证仍未完成。
+
 日期：2026-10-21。环境：Windows，Node.js v24.17.0，npm 11.13.0。依赖实际版本：React 19.3.1、Express 5.3.0、Vite 7.3.7、ts-fsrs 5.4.2、ExcelJS 4.4.0，以 package-lock.json 为准。
 
 ## 已执行并通过
