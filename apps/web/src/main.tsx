@@ -27,23 +27,8 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import "./style.css";
+import { api } from "./api.ts";
 type Any = Record<string, any>;
-async function api(url: string, body?: unknown, method?: string) {
-  const response = await fetch("/api" + url, {
-    method: method || (body ? "POST" : "GET"),
-    headers:
-      body instanceof FormData
-        ? undefined
-        : body
-          ? { "Content-Type": "application/json" }
-          : undefined,
-    body:
-      body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "请求失败");
-  return result;
-}
 const modes = [
   ["card", "单词卡片"],
   ["choice", "英译中选择"],
@@ -926,9 +911,20 @@ function App() {
                       已有同名词会关联到目标词库，保留原有内容和记忆状态；同一词库内重复行跳过。不会自动调用
                       AI。
                     </p>
+                    {!mapping.includes("word") && (
+                      <p role="alert" className="info">
+                        请将包含英文单词的一列匹配为“英文单词”，再确认导入。
+                      </p>
+                    )}
                     <button
                       className="primary"
-                      disabled={busy || !target}
+                      disabled={
+                        busy ||
+                        !target ||
+                        !mapping.includes("word") ||
+                        new Set(mapping.filter(Boolean)).size !==
+                          mapping.filter(Boolean).length
+                      }
                       onClick={() =>
                         action(async () => {
                           const r = await api("/import", {
@@ -944,7 +940,10 @@ function App() {
                         })
                       }
                     >
-                      确认导入 {preview.rows.length} 行 <ArrowRight size={17} />
+                      {busy
+                        ? "正在保存，请稍候…"
+                        : `确认导入 ${preview.rows.length} 行`}{" "}
+                      <ArrowRight size={17} />
                     </button>
                   </>
                 )}

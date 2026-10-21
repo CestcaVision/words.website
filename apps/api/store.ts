@@ -159,6 +159,21 @@ export class Store {
   import(vocab: number, rows: unknown[], filename: string) {
     if (!this.one("SELECT id FROM vocabularies WHERE id=?", vocab))
       throw new Error("目标词库不存在");
+    const findWord = this.db.prepare(
+      "SELECT id FROM words WHERE word=? COLLATE NOCASE",
+    );
+    const insertWord = this.db.prepare(
+      "INSERT INTO words(word,zh,en,phonetic,pos,example,translation,tags,notes) VALUES(?,?,?,?,?,?,?,?,?)",
+    );
+    const insertCard = this.db.prepare(
+      "INSERT INTO cards(word_id,json,due) VALUES(?,?,?)",
+    );
+    const findLink = this.db.prepare(
+      "SELECT 1 FROM vocabulary_words WHERE vocabulary_id=? AND word_id=?",
+    );
+    const insertLink = this.db.prepare(
+      "INSERT INTO vocabulary_words VALUES(?,?)",
+    );
     return this.tx(() => {
       let success = 0,
         skipped = 0;
@@ -175,39 +190,18 @@ export class Store {
           return;
         }
         const w = parsed.data;
-        let existing = this.one(
-          "SELECT id FROM words WHERE word=? COLLATE NOCASE",
-          w.word,
-        );
+        let existing = findWord.get(w.word) as { id: number } | undefined;
         if (!existing) {
-          const result = this.run(
-            "INSERT INTO words(word,zh,en,phonetic,pos,example,translation,tags,notes) VALUES(?,?,?,?,?,?,?,?,?)",
-            ...Object.values(w),
-          );
+          const result = insertWord.run(...Object.values(w));
           existing = { id: Number(result.lastInsertRowid) };
           const c = createEmptyCard();
-          this.run(
-            "INSERT INTO cards(word_id,json,due) VALUES(?,?,?)",
-            existing.id,
-            JSON.stringify(c),
-            c.due.toISOString(),
-          );
+          insertCard.run(existing.id, JSON.stringify(c), c.due.toISOString());
         }
-        if (
-          this.one(
-            "SELECT 1 FROM vocabulary_words WHERE vocabulary_id=? AND word_id=?",
-            vocab,
-            existing.id,
-          )
-        ) {
+        if (findLink.get(vocab, existing.id)) {
           skipped++;
           return;
         }
-        this.run(
-          "INSERT INTO vocabulary_words VALUES(?,?)",
-          vocab,
-          existing.id,
-        );
+        insertLink.run(vocab, existing.id);
         success++;
       });
       const result = { success, skipped, failed: errors.length, errors };

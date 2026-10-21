@@ -14,9 +14,12 @@ export const fields = [
 export const aliases: Record<string, string> = {
   英文单词: "word",
   单词: "word",
+  单词或短语: "word",
+  英文单词或短语: "word",
   英文: "word",
   中文释义: "zh",
   释义: "zh",
+  释义或用法: "zh",
   英文释义: "en",
   音标: "phonetic",
   词性: "pos",
