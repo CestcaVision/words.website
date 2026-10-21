@@ -3,26 +3,39 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, existsSync, renameSync, unlinkSync, readdirSync } from "node:fs";
+import {
+  mkdirSync,
+  existsSync,
+  renameSync,
+  unlinkSync,
+  readdirSync,
+} from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { Store, root } from "./store.ts";
 import { readImport, fields } from "./importer.ts";
 import { wordSchema, settingsSchema } from "../../packages/shared/schema.ts";
-dotenv.config({path:path.join(root,'.env'),quiet:true});
+dotenv.config({ path: path.join(root, ".env"), quiet: true });
 const app = express();
 let store = new Store();
-let epoch=randomUUID();
-const backupDir=path.resolve(root,process.env.BACKUP_DIR||'backups');
+let epoch = randomUUID();
+const backupDir = path.resolve(root, process.env.BACKUP_DIR || "backups");
 let restoring = false;
 let activeBackups = 0;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "12mb" }));
 app.use("/api", (req, res, next) => {
-  if(restoring) return res.status(503).json({error:'正在恢复，请稍后重新加载'});
-  if(!['127.0.0.1','localhost'].includes(req.hostname)) return res.status(403).json({error:'仅允许本机访问'});
+  if (restoring)
+    return res.status(503).json({ error: "正在恢复，请稍后重新加载" });
+  if (!["127.0.0.1", "localhost"].includes(req.hostname))
+    return res.status(403).json({ error: "仅允许本机访问" });
   const origin = req.headers.origin;
-  const allowed = new Set([`http://127.0.0.1:${process.env.PORT||3000}`,`http://localhost:${process.env.PORT||3000}`,'http://127.0.0.1:5173','http://localhost:5173']);
+  const allowed = new Set([
+    `http://127.0.0.1:${process.env.PORT || 3000}`,
+    `http://localhost:${process.env.PORT || 3000}`,
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+  ]);
   if (origin && !allowed.has(origin))
     return res.status(403).json({ error: "不允许的来源" });
   if (req.headers["sec-fetch-site"] === "cross-site")
@@ -33,7 +46,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
 });
-const restoreUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:250*1024*1024,files:1}});
+const restoreUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 250 * 1024 * 1024, files: 1 },
+});
 const id = (value: unknown) => z.coerce.number().int().positive().parse(value);
 app.get("/api/status", (_, res) =>
   res.json({
@@ -120,8 +136,8 @@ app.get("/api/import/logs", (_, res) =>
   res.json(store.all("SELECT * FROM import_logs ORDER BY id DESC LIMIT 50")),
 );
 app.get("/api/next", (req, res) => {
-  const card=store.next(Number(req.query.vocab)||0);
-  res.json(card?{...card,epoch}:null);
+  const card = store.next(Number(req.query.vocab) || 0);
+  res.json(card ? { ...card, epoch } : null);
 });
 app.post("/api/review", (req, res) => {
   const input = z
@@ -132,11 +148,14 @@ app.post("/api/review", (req, res) => {
       rating: z.number().int().min(1).max(4),
       seconds: z.number().finite().min(0).max(3600),
       mode: z.enum(["card", "choice", "spelling", "listening", "difficult"]),
-      correct:z.boolean().nullable().optional(),
-      epoch:z.string().uuid(),
+      correct: z.boolean().nullable().optional(),
+      epoch: z.string().uuid(),
     })
     .parse(req.body);
-  if(input.epoch!==epoch)throw new Error('学习空间已重新启动或恢复，请重新加载卡片');
+  if (input.epoch !== epoch)
+    throw new Error("学习空间已重新启动或恢复，请重新加载卡片");
+  if (input.mode === "difficult")
+    throw new Error("错词专项属于额外练习，不提交正式复习");
   res.json(store.review(input as any));
 });
 const csv = (rows: any[]) =>
@@ -185,10 +204,16 @@ app.get("/api/backup", async (_, res) => {
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `vocabflow-${Date.now()}-${randomUUID()}.sqlite`);
   activeBackups++;
-  try{await store.backup(file);res.download(file)}finally{activeBackups--}
+  try {
+    await store.backup(file);
+    res.download(file);
+  } finally {
+    activeBackups--;
+  }
 });
 app.post("/api/restore", restoreUpload.single("file"), async (req, res) => {
-  if (restoring||activeBackups||aiBusy) throw new Error("正在备份或调用 AI，请稍后恢复");
+  if (restoring || activeBackups || aiBusy)
+    throw new Error("正在备份或调用 AI，请稍后恢复");
   if (!req.file) throw new Error("请选择完整备份");
   restoring = true;
   const temp = path.join(store.dir, `restore-${randomUUID()}.sqlite`);
@@ -215,8 +240,18 @@ app.post("/api/restore", restoreUpload.single("file"), async (req, res) => {
       "ai_generation_cache",
       "migrations",
       "ai_usage",
-    ])
+    ]) {
       candidate.prepare(`SELECT * FROM ${table} LIMIT 1`).all();
+      const expected = store
+        .all(`PRAGMA table_info(${table})`)
+        .map((row) => [row.name, row.type, row.pk]);
+      const actual = candidate
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .map((row) => [row.name, row.type, row.pk]);
+      if (JSON.stringify(expected) !== JSON.stringify(actual))
+        throw new Error(`备份表结构不兼容：${table}`);
+    }
     settingsSchema.parse(
       JSON.parse(
         (candidate.prepare("SELECT json FROM settings WHERE id=1").get() as any)
@@ -225,12 +260,32 @@ app.post("/api/restore", restoreUpload.single("file"), async (req, res) => {
     );
     if (candidate.prepare("PRAGMA foreign_key_check").all().length)
       throw new Error("备份关联数据错误");
-    const known = new Set(readdirSync(path.join(root,'database/migrations')));
-    for(const migration of candidate.prepare('SELECT name FROM migrations').all())if(!known.has(String(migration.name)))throw new Error('备份来自较新版本，请先更新应用');
-    if(candidate.prepare("SELECT name FROM sqlite_master WHERE type IN ('trigger','view')").all().length)throw new Error('备份包含不支持的数据库对象');
-    for(const row of candidate.prepare('SELECT * FROM cards').all()){
-      const c=JSON.parse(String(row.json));
-      if(!Number.isFinite(Date.parse(c.due))||!Number.isFinite(c.stability)||!Number.isFinite(c.difficulty)||c.reps!==row.reps||c.state!==row.state||c.lapses!==row.lapses||c.due!==row.due)throw new Error('备份卡片状态无效');
+    const known = new Set(readdirSync(path.join(root, "database/migrations")));
+    for (const migration of candidate
+      .prepare("SELECT name FROM migrations")
+      .all())
+      if (!known.has(String(migration.name)))
+        throw new Error("备份来自较新版本，请先更新应用");
+    if (
+      candidate
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type IN ('trigger','view')",
+        )
+        .all().length
+    )
+      throw new Error("备份包含不支持的数据库对象");
+    for (const row of candidate.prepare("SELECT * FROM cards").all()) {
+      const c = JSON.parse(String(row.json));
+      if (
+        !Number.isFinite(Date.parse(c.due)) ||
+        !Number.isFinite(c.stability) ||
+        !Number.isFinite(c.difficulty) ||
+        c.reps !== row.reps ||
+        c.state !== row.state ||
+        c.lapses !== row.lapses ||
+        c.due !== row.due
+      )
+        throw new Error("备份卡片状态无效");
     }
     candidate.close();
     candidate = undefined;
@@ -246,7 +301,7 @@ app.post("/api/restore", restoreUpload.single("file"), async (req, res) => {
     try {
       renameSync(temp, current);
       store = new Store(dir);
-      epoch=randomUUID();
+      epoch = randomUUID();
       unlinkSync(current + ".previous");
     } catch (e) {
       if (existsSync(current)) unlinkSync(current);
@@ -289,11 +344,18 @@ app.post("/api/ai", async (req, res) => {
   if (cached) return res.json({ content: cached.content, cached: true });
   if (aiBusy || Date.now() - lastAi < 10000)
     throw new Error("请稍后再试，每次请求间隔至少 10 秒");
-  const aiDay=store.day();
-  if ((store.one('SELECT count FROM ai_usage WHERE day=?',aiDay)?.count||0)>=30) throw new Error("今日 AI 请求已达 30 次");
+  const aiDay = store.day();
+  if (
+    (store.one("SELECT count FROM ai_usage WHERE day=?", aiDay)?.count || 0) >=
+    30
+  )
+    throw new Error("今日 AI 请求已达 30 次");
   aiBusy = true;
   lastAi = Date.now();
-  store.run('INSERT INTO ai_usage(day,count) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET count=count+1',aiDay);
+  store.run(
+    "INSERT INTO ai_usage(day,count) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET count=count+1",
+    aiDay,
+  );
   try {
     const response = await fetch(
       `${(process.env.AI_BASE_URL || "https://api.xiaomimimo.com/v1").replace(/\/$/, "")}/chat/completions`,
@@ -338,7 +400,7 @@ app.post("/api/ai", async (req, res) => {
   }
 });
 app.use(express.static(path.join(root, "dist")));
-app.use('/api',(_,res)=>res.status(404).json({error:'接口不存在'}));
+app.use("/api", (_, res) => res.status(404).json({ error: "接口不存在" }));
 app.get("/{*path}", (_, res) => {
   if (existsSync(path.join(root, "dist/index.html")))
     res.sendFile(path.join(root, "dist/index.html"));
@@ -359,20 +421,20 @@ app.use(
         ? "validation"
         : err.code || err.name || "Error",
     );
-    res
-      .status(400)
-      .json({
-        error:
-          err instanceof z.ZodError
-            ? err.issues.map((x: any) => x.message).join("；")
-            : err.message || "操作失败",
-      });
+    res.status(400).json({
+      error:
+        err instanceof z.ZodError
+          ? err.issues.map((x: any) => x.message).join("；")
+          : err.message || "操作失败",
+    });
   },
 );
 const port = Number(process.env.PORT || 3000);
 const server = app.listen(port, "127.0.0.1", () => {
-  const address=server.address();
-  console.log(`VocabFlow AI http://127.0.0.1:${typeof address==='object'&&address?address.port:port}\n数据: ${store.dir}`);
+  const address = server.address();
+  console.log(
+    `VocabFlow AI http://127.0.0.1:${typeof address === "object" && address ? address.port : port}\n数据: ${store.dir}`,
+  );
 });
 server.on("error", (e: any) => {
   console.error(

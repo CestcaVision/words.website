@@ -226,3 +226,25 @@ test("cross-vocabulary shared state, migration preserves data, online WAL backup
     done();
   }
 });
+test("incremental migration preserves old logs and prevents deletion from refunding daily quota", () => {
+  const { s, dir, done } = fixture();
+  try {
+    s.import(1, [word(0), word(1)], "fixture");
+    const now = new Date();
+    review(s, s.next(0, now), now);
+    const original = s.all("SELECT word_id,json,version FROM cards");
+    s.db.exec(
+      "DROP TABLE ai_usage; ALTER TABLE daily_plans DROP COLUMN new_done; ALTER TABLE review_logs DROP COLUMN answer_correct; DELETE FROM migrations WHERE name<>'001.sql';",
+    );
+    s.close();
+    s.db = new Store(dir).db;
+    assert.deepEqual(s.all("SELECT word_id,json,version FROM cards"), original);
+    assert.equal(s.plan(now).newDone, 1);
+    assert.equal(s.one("SELECT count(*) n FROM review_logs").n, 1);
+    s.run("DELETE FROM words WHERE id=?", s.words().find((w) => w.reps > 0).id);
+    assert.equal(s.plan(now).newDone, 1);
+    assert.equal(s.one("SELECT count(*) n FROM review_logs").n, 0);
+  } finally {
+    done();
+  }
+});

@@ -13,3 +13,4 @@ logs/
 *.log
 test-results/
 .test-data/
+words/outputs/

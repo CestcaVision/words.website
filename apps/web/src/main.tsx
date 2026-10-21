@@ -241,7 +241,7 @@ function App() {
       seconds: Math.min(active.current, 120),
       mode,
       correct,
-      epoch:card.epoch,
+      epoch: card.epoch,
     });
     await refresh();
     await nextCard();
@@ -512,7 +512,9 @@ function App() {
                   [
                     Target,
                     "最近答题正确率",
-                    stats.answerAccuracy==null?'—':`${Math.round(stats.answerAccuracy)}%`,
+                    stats.answerAccuracy == null
+                      ? "—"
+                      : `${Math.round(stats.answerAccuracy)}%`,
                     "最近 100 次选择或拼写作答",
                     "blue",
                   ],
@@ -1088,8 +1090,7 @@ function App() {
                         · {card.pos || "WORD"}
                       </span>
                       <span>
-                        今日新词 {stats.plan.newDone} /{" "}
-                        {stats.plan.cap}
+                        今日新词 {stats.plan.newDone} / {stats.plan.cap}
                       </span>
                     </div>
                     {mode === "spelling" ? (
@@ -1577,6 +1578,11 @@ function App() {
             <Dialog.Description>
               内容由你保存。AI 生成解释单独标识，不会自动覆盖词库。
             </Dialog.Description>
+            {error && (
+              <div role="alert" className="alert error">
+                {error}
+              </div>
+            )}
             {editor && (
               <form
                 onSubmit={(e) => {

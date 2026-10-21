@@ -1,12 +1,15 @@
 import { DatabaseSync, backup } from "node:sqlite";
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  renameSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEmptyCard, fsrs, type Card, type Grade } from "ts-fsrs";
-import {
-  settingsSchema,
-  wordSchema,
-} from "../../packages/shared/schema.ts";
+import { settingsSchema, wordSchema } from "../../packages/shared/schema.ts";
 export const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
@@ -17,6 +20,9 @@ export class Store {
   constructor(dir = path.resolve(root, process.env.DATA_DIR || "data")) {
     this.dir = dir;
     mkdirSync(dir, { recursive: true });
+    const databaseFile = path.join(dir, "vocabflow.sqlite");
+    if (!existsSync(databaseFile) && existsSync(databaseFile + ".previous"))
+      renameSync(databaseFile + ".previous", databaseFile);
     this.db = new DatabaseSync(path.join(dir, "vocabflow.sqlite"));
     this.db.exec(
       "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS migrations(name TEXT PRIMARY KEY)",
@@ -106,9 +112,17 @@ export class Store {
     const recommended = Math.max(
       0,
       Math.min(
-        s.newGoal-n,
-        cap-n,
-        Math.floor((s.minutes * 60 * 0.9 - (this.one('SELECT coalesce(sum(seconds),0) seconds FROM study_sessions WHERE day=?',day).seconds) - due * speed(0, 20)) / speed(1, 45)),
+        s.newGoal - n,
+        cap - n,
+        Math.floor(
+          (s.minutes * 60 * 0.9 -
+            this.one(
+              "SELECT coalesce(sum(seconds),0) seconds FROM study_sessions WHERE day=?",
+              day,
+            ).seconds -
+            due * speed(0, 20)) /
+            speed(1, 45),
+        ),
       ),
     );
     this.run(
@@ -228,7 +242,7 @@ export class Store {
       rating: Grade;
       seconds: number;
       mode: string;
-      correct?: boolean|null;
+      correct?: boolean | null;
     },
     now = new Date(),
   ) {
@@ -292,7 +306,7 @@ export class Store {
         input.mode,
         JSON.stringify(result.log),
         JSON.stringify(out),
-        input.correct==null?null:Number(input.correct),
+        input.correct == null ? null : Number(input.correct),
       );
       this.run(
         "INSERT INTO study_sessions VALUES(?,?,?)",
@@ -343,8 +357,10 @@ export class Store {
       plan: p,
       today,
       counts,
-      difficult:this.words(0,'','difficult').length,
-      answerAccuracy:this.one('SELECT avg(answer_correct)*100 accuracy FROM (SELECT answer_correct FROM review_logs WHERE answer_correct IS NOT NULL ORDER BY at DESC LIMIT 100)').accuracy,
+      difficult: this.words(0, "", "difficult").length,
+      answerAccuracy: this.one(
+        "SELECT avg(answer_correct)*100 accuracy FROM (SELECT answer_correct FROM review_logs WHERE answer_correct IS NOT NULL ORDER BY at DESC LIMIT 100)",
+      ).accuracy,
       accuracy: recent.accuracy || 0,
       calendar,
       streak,
