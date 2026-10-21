@@ -9,12 +9,18 @@ import {
   renameSync,
   unlinkSync,
   readdirSync,
+  readFileSync,
 } from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { Store, root } from "./store.ts";
 import { readImport, fields } from "./importer.ts";
 import { wordSchema, settingsSchema } from "../../packages/shared/schema.ts";
+import {
+  parseEnrichment,
+  applyEnrichment,
+  enrichmentSchema,
+} from "./enrichment.ts";
 dotenv.config({ path: path.join(root, ".env"), quiet: true });
 const app = express();
 let store = new Store();
@@ -93,12 +99,49 @@ app.get("/api/words", (req, res) =>
 );
 app.put("/api/words/:id", (req, res) => {
   const w = wordSchema.parse(req.body);
-  store.run(
-    "UPDATE words SET word=?,zh=?,en=?,phonetic=?,pos=?,example=?,translation=?,tags=?,notes=? WHERE id=?",
-    ...Object.values(w),
-    id(req.params.id),
-  );
+  const wordId = id(req.params.id),
+    usage = z.string().max(4000).optional().parse(req.body.usage);
+  store.tx(() => {
+    const previous = store.one("SELECT * FROM words WHERE id=?", wordId);
+    if (!previous) throw new Error("单词不存在");
+    store.run(
+      "UPDATE words SET word=?,zh=?,en=?,phonetic=?,pos=?,example=?,translation=?,tags=?,notes=? WHERE id=?",
+      ...Object.values(w),
+      wordId,
+    );
+    const enriched = store.one(
+      "SELECT * FROM word_enrichments WHERE word_id=?",
+      wordId,
+    );
+    if (enriched || usage !== undefined) {
+      const kept = JSON.parse(enriched?.fields || "[]").filter((key: string) =>
+        key === "usage"
+          ? usage === undefined || usage === enriched?.usage
+          : (w as Record<string, string>)[key] === previous[key],
+      );
+      store.run(
+        "INSERT INTO word_enrichments(word_id,usage,fields) VALUES(?,?,?) ON CONFLICT(word_id) DO UPDATE SET usage=excluded.usage,fields=excluded.fields",
+        wordId,
+        usage ?? enriched?.usage ?? "",
+        JSON.stringify(kept),
+      );
+    }
+  });
   res.json({ ok: true });
+});
+app.post("/api/words/:id/ai-content", (req, res) => {
+  const body = z
+    .object({ word: z.string(), fields: enrichmentSchema })
+    .parse(req.body);
+  res.json(
+    applyEnrichment(
+      store,
+      id(req.params.id),
+      body.word,
+      body.fields,
+      process.env.AI_MODEL || "mimo-v2.6-pro",
+    ),
+  );
 });
 app.delete("/api/words/:id", (req, res) => {
   store.run("DELETE FROM words WHERE id=?", id(req.params.id));
@@ -227,6 +270,31 @@ app.post("/api/restore", restoreUpload.single("file"), async (req, res) => {
       "ok"
     )
       throw new Error("备份完整性校验失败");
+    const migrationNames = readdirSync(
+      path.join(root, "database/migrations"),
+    ).sort();
+    for (const migration of candidate
+      .prepare("SELECT name FROM migrations")
+      .all())
+      if (!migrationNames.includes(String(migration.name)))
+        throw new Error("备份来自较新版本，请先更新应用");
+    for (const name of migrationNames) {
+      if (
+        !candidate.prepare("SELECT 1 FROM migrations WHERE name=?").get(name)
+      ) {
+        candidate.exec("BEGIN");
+        try {
+          candidate.exec(
+            readFileSync(path.join(root, "database/migrations", name), "utf8"),
+          );
+          candidate.prepare("INSERT INTO migrations VALUES(?)").run(name);
+          candidate.exec("COMMIT");
+        } catch (error) {
+          candidate.exec("ROLLBACK");
+          throw error;
+        }
+      }
+    }
     for (const table of [
       "settings",
       "vocabularies",
@@ -240,6 +308,7 @@ app.post("/api/restore", restoreUpload.single("file"), async (req, res) => {
       "ai_generation_cache",
       "migrations",
       "ai_usage",
+      "word_enrichments",
     ]) {
       candidate.prepare(`SELECT * FROM ${table} LIMIT 1`).all();
       const expected = store
@@ -326,14 +395,18 @@ app.post("/api/ai", async (req, res) => {
     ? store.one("SELECT * FROM words WHERE id=?", wordId)
     : null;
   if (wordId && !word) throw new Error("单词不存在");
-  const prompt = word
-    ? `用中文解释这个单词，提供 IELTS Reading/Writing/Speaking 语境、例句及翻译、同反义词、易混词、搭配、记忆技巧。单词数据：${JSON.stringify(word)}`
-    : `根据这些真实统计提供简短学习建议，不编造数据：${JSON.stringify(store.stats())}。困难词：${JSON.stringify(
-        store
-          .words(0, "", "difficult")
-          .slice(0, 15)
-          .map((x) => x.word),
-      )}`;
+  const structured = req.body.kind === "word-fields";
+  if (structured && !word) throw new Error("补全内容需要选择单词");
+  const prompt = structured
+    ? `请为英语单词生成可保存的学习资料。只输出 JSON 对象，不要 Markdown。字段全部必须包含：zh（准确中文释义，多个常见义项）、pos（词性及中文名称）、example（自然英文例句）、translation（例句中文翻译）、usage（用中文解释如何使用，包含常见搭配、句型和雅思语境）、en（英文释义）、phonetic（音标）。zh、pos、example、translation、usage 不得为空。单词数据：${JSON.stringify(word)}`
+    : word
+      ? `用中文分节解释这个单词，必须包含：中文释义、词性（英文缩写及中文）、英文例句及中文翻译、如何使用（常见搭配、句型、注意事项）。再提供 IELTS Reading/Writing/Speaking 语境、同反义词、易混词、记忆技巧。单词数据：${JSON.stringify(word)}`
+      : `根据这些真实统计提供简短学习建议，不编造数据：${JSON.stringify(store.stats())}。困难词：${JSON.stringify(
+          store
+            .words(0, "", "difficult")
+            .slice(0, 15)
+            .map((x) => x.word),
+        )}`;
   const key = createHash("sha256")
     .update((process.env.AI_MODEL || "mimo-v2.6-pro") + prompt)
     .digest("hex");
@@ -341,7 +414,12 @@ app.post("/api/ai", async (req, res) => {
     "SELECT content FROM ai_generation_cache WHERE key=?",
     key,
   );
-  if (cached) return res.json({ content: cached.content, cached: true });
+  if (cached)
+    return res.json({
+      content: cached.content,
+      cached: true,
+      ...(structured ? { fields: parseEnrichment(cached.content) } : {}),
+    });
   if (aiBusy || Date.now() - lastAi < 10000)
     throw new Error("请稍后再试，每次请求间隔至少 10 秒");
   const aiDay = store.day();
@@ -386,13 +464,14 @@ app.post("/api/ai", async (req, res) => {
       .string()
       .max(30000)
       .parse(data.choices?.[0]?.message?.content);
+    const fields = structured ? parseEnrichment(content) : undefined;
     store.run(
       "INSERT OR REPLACE INTO ai_generation_cache VALUES(?,?,?)",
       key,
       content,
       new Date().toISOString(),
     );
-    res.json({ content, cached: false });
+    res.json({ content, cached: false, fields });
   } catch {
     throw new Error("AI 调用失败或超时，请检查网络和配置；本地学习不受影响");
   } finally {

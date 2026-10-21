@@ -221,7 +221,7 @@ test("cross-vocabulary shared state, migration preserves data, online WAL backup
     s.db = reopened.db;
     assert.equal(s.settings().nickname, "Tester");
     assert.equal(s.words()[0].reps, 1);
-    assert.equal(s.all("SELECT * FROM migrations").length, 3);
+    assert.equal(s.all("SELECT * FROM migrations").length, 4);
   } finally {
     done();
   }
@@ -234,7 +234,7 @@ test("incremental migration preserves old logs and prevents deletion from refund
     review(s, s.next(0, now), now);
     const original = s.all("SELECT word_id,json,version FROM cards");
     s.db.exec(
-      "DROP TABLE ai_usage; ALTER TABLE daily_plans DROP COLUMN new_done; ALTER TABLE review_logs DROP COLUMN answer_correct; DELETE FROM migrations WHERE name<>'001.sql';",
+      "DROP TABLE word_enrichments; DROP TABLE ai_usage; ALTER TABLE daily_plans DROP COLUMN new_done; ALTER TABLE review_logs DROP COLUMN answer_correct; DELETE FROM migrations WHERE name<>'001.sql';",
     );
     s.close();
     s.db = new Store(dir).db;

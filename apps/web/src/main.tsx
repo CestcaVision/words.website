@@ -74,6 +74,7 @@ function App() {
     [correct, setCorrect] = useState<boolean | null>(null),
     [options, setOptions] = useState<string[]>([]),
     [ai, setAi] = useState(""),
+    [aiDraft, setAiDraft] = useState<Any | null>(null),
     [practice, setPractice] = useState(false);
   const started = useRef(Date.now()),
     active = useRef(0),
@@ -234,6 +235,27 @@ function App() {
   async function askAI(wordId?: number) {
     const result = await api("/ai", { wordId });
     setAi(`AI 生成${result.cached ? " · 已缓存" : ""}\n\n${result.content}`);
+  }
+  async function generateFields(word: Any) {
+    const result = await api("/ai", { wordId: word.id, kind: "word-fields" });
+    setAiDraft({
+      id: word.id,
+      word: word.word,
+      fields: result.fields,
+      cached: result.cached,
+    });
+  }
+  async function saveGeneratedFields() {
+    if (!aiDraft) return;
+    const updated = await api(`/words/${aiDraft.id}/ai-content`, {
+      word: aiDraft.word,
+      fields: aiDraft.fields,
+    });
+    if (card?.id === updated.id) setCard({ ...card, ...updated });
+    setAiDraft(null);
+    await loadWords();
+    await refresh();
+    setNotice("AI 资料已保存到单词，已有内容已保留");
   }
   function checkAnswer(value: string) {
     setAnswer(value);
@@ -746,6 +768,13 @@ function App() {
                             编辑
                           </button>
                           <button
+                            className="text-button"
+                            disabled={busy}
+                            onClick={() => action(() => generateFields(w))}
+                          >
+                            AI 补全
+                          </button>
+                          <button
                             className="text-button danger"
                             onClick={() =>
                               action(async () => {
@@ -1194,6 +1223,12 @@ function App() {
                           <h2 className="english-word">{card.word}</h2>
                         )}
                         <h3>{card.zh || "暂无中文释义"}</h3>
+                        {card.ai_fields && card.ai_fields !== "[]" && (
+                          <p className="muted">
+                            部分资料由 AI 生成，请结合语境核对。
+                          </p>
+                        )}
+                        {card.pos && <p>词性：{card.pos}</p>}
                         {card.en && <p>{card.en}</p>}
                         {card.example && (
                           <blockquote>
@@ -1203,6 +1238,14 @@ function App() {
                         )}
                         {card.notes && (
                           <p className="note">我的笔记：{card.notes}</p>
+                        )}
+                        {card.usage && (
+                          <blockquote>
+                            <strong>如何使用</strong>
+                            <p style={{ whiteSpace: "pre-wrap" }}>
+                              {card.usage}
+                            </p>
+                          </blockquote>
                         )}
                         <div className="button-row center">
                           <button
@@ -1218,6 +1261,14 @@ function App() {
                           >
                             <Sparkles size={15} />
                             AI 深度解释
+                          </button>
+                          <button
+                            className="primary"
+                            disabled={busy}
+                            onClick={() => action(() => generateFields(card))}
+                          >
+                            <Sparkles size={15} />
+                            AI 补全资料
                           </button>
                         </div>
                       </div>
@@ -1565,6 +1616,75 @@ function App() {
         </div>
       </main>
       <Dialog.Root
+        open={!!aiDraft}
+        onOpenChange={(open) => {
+          if (!open) setAiDraft(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="modal-overlay" />
+          <Dialog.Content className="modal">
+            <Dialog.Title>AI 补全：{aiDraft?.word}</Dialog.Title>
+            <Dialog.Description>
+              以下资料由 AI 生成{aiDraft?.cached ? "（已缓存）" : ""}
+              ，可以修改后保存。仅填补空白内容，保留已有释义与笔记。
+            </Dialog.Description>
+            {error && (
+              <div role="alert" className="alert error">
+                {error}
+              </div>
+            )}
+            {aiDraft && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  action(saveGeneratedFields);
+                }}
+              >
+                <div className="form-grid">
+                  {Object.entries({
+                    ...fieldNames,
+                    usage: "如何使用（中文说明）",
+                  })
+                    .filter(([key]) => key in aiDraft.fields)
+                    .map(([key, label]) => (
+                      <Field key={key} label={String(label)}>
+                        <textarea
+                          required={[
+                            "zh",
+                            "pos",
+                            "example",
+                            "translation",
+                            "usage",
+                          ].includes(key)}
+                          value={aiDraft.fields[key]}
+                          onChange={(event) =>
+                            setAiDraft({
+                              ...aiDraft,
+                              fields: {
+                                ...aiDraft.fields,
+                                [key]: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </Field>
+                    ))}
+                </div>
+                <div className="button-row space-top">
+                  <button className="primary" disabled={busy}>
+                    保存空缺资料
+                  </button>
+                  <Dialog.Close className="secondary" type="button">
+                    取消
+                  </Dialog.Close>
+                </div>
+              </form>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <Dialog.Root
         open={!!editor}
         onOpenChange={(open) => {
           if (!open) setEditor(null);
@@ -1599,11 +1719,16 @@ function App() {
                 }}
               >
                 <div className="form-grid">
-                  {Object.entries(fieldNames).map(([k, v]) => (
+                  {Object.entries({
+                    ...fieldNames,
+                    usage: "如何使用（中文说明）",
+                  }).map(([k, v]) => (
                     <Field key={k} label={String(v)}>
-                      {["example", "translation", "notes"].includes(k) ? (
+                      {["example", "translation", "notes", "usage"].includes(
+                        k,
+                      ) ? (
                         <textarea
-                          value={editor[k]}
+                          value={editor[k] || ""}
                           onChange={(e) =>
                             setEditor({ ...editor, [k]: e.target.value })
                           }
@@ -1611,7 +1736,7 @@ function App() {
                       ) : (
                         <input
                           required={k === "word"}
-                          value={editor[k]}
+                          value={editor[k] || ""}
                           onChange={(e) =>
                             setEditor({ ...editor, [k]: e.target.value })
                           }

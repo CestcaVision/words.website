@@ -143,7 +143,7 @@ export class Store {
   }
   words(vocab?: number, q = "", filter = "") {
     return this.all(
-      `SELECT w.*,c.json card,c.version,c.reps,c.lapses,c.due,c.state FROM words w JOIN cards c ON c.word_id=w.id WHERE (?=0 OR EXISTS(SELECT 1 FROM vocabulary_words v WHERE v.word_id=w.id AND v.vocabulary_id=?)) AND (w.word LIKE ? OR w.zh LIKE ?) ${filter === "new" ? "AND c.reps=0" : filter === "difficult" ? "AND (c.lapses>0 OR EXISTS(SELECT 1 FROM review_logs r WHERE r.word_id=w.id AND (r.rating=1 OR r.answer_correct=0)))" : filter === "due" ? "AND c.reps>0 AND c.due<=strftime('%Y-%m-%dT%H:%M:%fZ','now')" : ""} ORDER BY w.id`,
+      `SELECT w.*,coalesce(e.usage,'') usage,coalesce(e.fields,'[]') ai_fields,c.json card,c.version,c.reps,c.lapses,c.due,c.state FROM words w JOIN cards c ON c.word_id=w.id LEFT JOIN word_enrichments e ON e.word_id=w.id WHERE (?=0 OR EXISTS(SELECT 1 FROM vocabulary_words v WHERE v.word_id=w.id AND v.vocabulary_id=?)) AND (w.word LIKE ? OR w.zh LIKE ?) ${filter === "new" ? "AND c.reps=0" : filter === "difficult" ? "AND (c.lapses>0 OR EXISTS(SELECT 1 FROM review_logs r WHERE r.word_id=w.id AND (r.rating=1 OR r.answer_correct=0)))" : filter === "due" ? "AND c.reps>0 AND c.due<=strftime('%Y-%m-%dT%H:%M:%fZ','now')" : ""} ORDER BY w.id`,
       vocab || 0,
       vocab || 0,
       `%${q}%`,

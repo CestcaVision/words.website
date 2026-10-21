@@ -16,6 +16,99 @@ import ExcelJS from "exceljs";
 import { root, Store } from "../apps/api/store.ts";
 import { pathToFileURL } from "node:url";
 
+test("AI structured fields can be previewed, saved, edited and restored from an older backup", async () => {
+  const generated = {
+    zh: "有韧性的",
+    pos: "adj. 形容词",
+    example: "She is resilient.",
+    translation: "她很坚韧。",
+    usage: "用于描述人或事物的恢复能力。",
+    en: "Able to recover.",
+    phonetic: "",
+  };
+  const { createServer } = await import("node:http");
+  const upstream = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    assert.match(JSON.parse(body).messages[1].content, /JSON/);
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(generated) } }],
+      }),
+    );
+  });
+  await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
+  const dir = mkdtempSync(path.join(tmpdir(), "vocabflow-fields-"));
+  const server = await launch(dir, {
+    AI_API_KEY: "fixture",
+    AI_BASE_URL: `http://127.0.0.1:${(upstream.address() as any).port}/v1`,
+  });
+  try {
+    await request(server.url, "/api/settings", { ai: true }, "PUT");
+    await request(server.url, "/api/vocabularies", { name: "fixture" });
+    await request(server.url, "/api/words", {
+      vocab: 1,
+      word: { word: "resilient" },
+    });
+    const draft = await request(server.url, "/api/ai", {
+      wordId: 1,
+      kind: "word-fields",
+    });
+    assert.equal(draft.status, 200);
+    assert.deepEqual(draft.data.fields, generated);
+    assert.equal((await request(server.url, "/api/next")).data.zh, "");
+    assert.equal(
+      (
+        await request(server.url, "/api/words/1/ai-content", {
+          word: "resilient",
+          fields: draft.data.fields,
+        })
+      ).status,
+      200,
+    );
+    const saved = (await request(server.url, "/api/next")).data;
+    assert.equal(saved.zh, generated.zh);
+    assert.equal(saved.usage, generated.usage);
+    assert.equal(saved.reps, 0);
+    await request(
+      server.url,
+      "/api/words/1",
+      { ...saved, usage: "用户修改的用法" },
+      "PUT",
+    );
+    const edited = (await request(server.url, "/api/next")).data;
+    assert.equal(edited.usage, "用户修改的用法");
+    assert.ok(!JSON.parse(edited.ai_fields).includes("usage"));
+    const snapshot = await (
+      await fetch(server.url + "/api/backup")
+    ).arrayBuffer();
+    const legacy = path.join(dir, "legacy.sqlite");
+    writeFileSync(legacy, new Uint8Array(snapshot));
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(legacy);
+    db.exec(
+      "DROP TABLE word_enrichments; DELETE FROM migrations WHERE name='004.sql'",
+    );
+    db.close();
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([new Uint8Array(readFileSync(legacy))]),
+      "legacy.sqlite",
+    );
+    assert.equal((await request(server.url, "/api/restore", form)).status, 200);
+    assert.equal(
+      (await request(server.url, "/api/next")).data.zh,
+      generated.zh,
+    );
+  } finally {
+    await server.stop();
+    await new Promise<void>((r) => upstream.close(() => r()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 async function launch(dir: string, extra: Record<string, string> = {}) {
   const child = spawn(
     process.execPath,
