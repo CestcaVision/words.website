@@ -37,7 +37,7 @@ BACKUP_DIR/
 1. 在原网站下载完整学习备份到自己的电脑。
 2. 记录原 DATA_DIR、BACKUP_DIR、端口、公网地址，并备份现有 `.env` 和公网适配源码。
 3. `sudo systemctl stop vocabflow`。确认停止，避免旧进程继续写入。
-4. 将 PR 代码安装到部署目录，保留原 data、backups 和 `.env`。服务器此前手动修改的 `server.ts`、`main.tsx` 与本 PR 会冲突，先保留副本并人工核对，不能盲目 `git pull` 或覆盖数据。
+4. 按下面“从自己的 Fork 获取分支”更新代码，保留原 data、backups 和 `.env`。已有的公网适配源码先备份并暂存；本分支已包含对应适配，不要直接重新套用旧补丁。
 5. 执行 `npm ci && npm run build`，不要删开发依赖，本版运行仍需要 tsx。
 6. 合并必要的部署配置，见下一节。
 7. 在服务器交互终端创建你自己的账号：
@@ -63,6 +63,52 @@ BACKUP_DIR/
 11. 各账号在网页填写自己的 AI 配置。旧 `.env` 中的 AI 配置不会自动变成全站共享密钥。
 
 创建/重置账号的 CLI 使用当前 DATA_DIR，和应用解析规则相同；切勿从另一个 DATA_DIR 创建账号后误认为部署已配置。
+
+## 从自己的 Fork 获取分支
+
+当前部署来源是 `https://github.com/CestcaVision/words.website.git`，登录系统位于 `feat/account-login`。不需要先合并 PR；Google Cloud 可以直接运行这个分支。以下命令在 **Google Cloud 的 SSH 终端** 执行，不是在 Mac 执行。
+
+首次从单人版切换时，在上述升级步骤 3 停止服务后操作。先创建私密完整备份（包含配置和数据，不包含依赖、构建结果和 Git 历史）：
+
+```bash
+cd "$HOME/words.website"
+backup_dir="$HOME/vocabflow-deploy-backups"
+mkdir -p "$backup_dir"
+chmod 700 "$backup_dir"
+(umask 077; tar --exclude='./node_modules' --exclude='./dist' --exclude='./.git' -czf "$backup_dir/before-login-$(date +%Y%m%d-%H%M%S).tar.gz" .)
+```
+
+确认备份成功后更新来源并获取分支：
+
+```bash
+cd "$HOME/words.website"
+git remote set-url origin https://github.com/CestcaVision/words.website.git
+git fetch origin
+# 保存服务器上已有的已跟踪源码改动；不会上传 stash，也不移动忽略的 .env 和 data。
+git stash push -m "server-before-account-login"
+git switch feat/account-login || git switch -c feat/account-login --track origin/feat/account-login
+```
+
+如果 switch 报错，先处理提示的文件冲突并停止后续操作；完整备份和 `git stash list` 可用于核对。不要自动执行 stash pop：旧公网适配已合入新代码。然后在切换成功的目录执行：
+
+```bash
+git pull --ff-only origin feat/account-login
+npm ci && npm run build
+```
+
+每条命令成功后再执行下一条；失败时不要继续启动服务。首次升级**继续执行上面的步骤 6–11**：配置 HTTP/HTTPS、创建账号并认领旧数据后再启动。不要只换分支并重启，否则旧数据尚未分配给你的账号。
+
+本分支后续更新：先检查 `git status --short`，若有源码改动先备份核对。停止服务并按上面的方式备份当前数据后执行：
+
+```bash
+cd "$HOME/words.website"
+git switch feat/account-login &&
+git pull --ff-only origin feat/account-login &&
+npm ci && npm run build &&
+sudo systemctl start vocabflow
+```
+
+PR 合并进你 Fork 的 main 后，可以在工作区干净且已备份的前提下，将分支改为 `main`，并使用 `git pull --ff-only origin main`。服务器不需要配置 Mac 的 `127.0.0.1:7897` 代理。
 
 ## Google Cloud IP 测试与 HTTPS
 
