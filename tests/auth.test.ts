@@ -386,3 +386,36 @@ test("secure cookies, password-change revocation and login/register throttles us
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("explicit trusted proxies keep client limits separate and ignore untrusted forwarding", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "vocabflow-proxy-"));
+  process.env.TRUST_PROXY = "127.0.0.1,::1";
+  const application = createApplication(dir, path.join(dir, "backups"));
+  try {
+    const attempt = (client: string, remoteAddress = "127.0.0.1") =>
+      invoke(application.app, "/api/auth/register", {
+        body: { username: "invalid", password: "short" },
+        headers: { "x-forwarded-for": client },
+        remoteAddress,
+      });
+    for (let i = 0; i < 5; i++)
+      assert.equal((await attempt("203.0.113.1")).status, 400);
+    assert.equal((await attempt("203.0.113.1")).status, 429);
+    assert.equal((await attempt("203.0.113.2")).status, 400);
+    for (let i = 0; i < 5; i++)
+      assert.equal(
+        (await attempt(`198.51.100.${i + 1}`, "203.0.113.3")).status,
+        400,
+      );
+    assert.equal((await attempt("198.51.100.99", "203.0.113.3")).status, 429);
+    const expired = await invoke(application.app, "/api/auth/logout", {
+      method: "POST",
+    });
+    assert.equal(expired.status, 401);
+    assert.equal(expired.data.code, "SESSION_REQUIRED");
+  } finally {
+    application.close();
+    delete process.env.TRUST_PROXY;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { existsSync, mkdirSync, chmodSync } from "node:fs";
 import path from "node:path";
+import { isIP } from "node:net";
 import { z } from "zod";
 import {
   Accounts,
@@ -19,6 +20,12 @@ export function createApplication(
   dataDir = path.resolve(root, process.env.DATA_DIR || "data"),
   backupDir = path.resolve(root, process.env.BACKUP_DIR || "backups"),
 ) {
+  const trustedProxies = (process.env.TRUST_PROXY || "")
+    .split(",")
+    .map((ip) => ip.trim())
+    .filter(Boolean);
+  if (trustedProxies.some((ip) => !isIP(ip)))
+    throw new Error("TRUST_PROXY 只能填写逗号分隔的可信代理 IP 地址");
   const accounts = new Accounts(dataDir);
   const app = express();
   const port = Number(process.env.PORT || 3000);
@@ -34,7 +41,8 @@ export function createApplication(
   };
   const workspaces = new Map<number, ReturnType<typeof createWorkspace>>();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "12mb" }));
+  if (trustedProxies.length) app.set("trust proxy", trustedProxies);
+  app.use("/api/auth", express.json({ limit: "16kb" }));
   const origins = new Set([
     `http://127.0.0.1:${port}`,
     `http://localhost:${port}`,
@@ -73,7 +81,10 @@ export function createApplication(
     next: express.NextFunction,
   ) {
     const session = readSession(req);
-    if (!session) return res.status(401).json({ error: "请先登录" });
+    if (!session)
+      return res
+        .status(401)
+        .json({ error: "请先登录", code: "SESSION_REQUIRED" });
     if (
       !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
       req.headers["x-csrf-token"] !== session.csrf
@@ -114,13 +125,13 @@ export function createApplication(
     );
   });
   app.post("/api/auth/register", async (req, res) => {
-    accounts.throttle("register-ip:" + req.socket.remoteAddress, 5);
+    accounts.throttle("register-ip:" + (req.ip || req.socket.remoteAddress), 5);
     const input = credentials.parse(req.body);
     const user = await accounts.register(input.username, input.password);
     res.status(201).json(startSession(res, user));
   });
   app.post("/api/auth/login", async (req, res) => {
-    accounts.throttle("login-ip:" + req.socket.remoteAddress, 20);
+    accounts.throttle("login-ip:" + (req.ip || req.socket.remoteAddress), 20);
     const input = credentials.parse(req.body);
     accounts.throttle("login-name:" + input.username, 10);
     const user = await accounts.login(input.username, input.password);
@@ -149,7 +160,7 @@ export function createApplication(
     );
     res.json(startSession(res, session.user));
   });
-  app.use("/api", requireSession);
+  app.use("/api", requireSession, express.json({ limit: "12mb" }));
   app.get("/api/account/ai", (_, res) =>
     res.json(accounts.publicAI(res.locals.session.user.id)),
   );

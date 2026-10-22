@@ -1755,10 +1755,30 @@ function App({
                   适合查看与交换单词，不能恢复完整学习状态。
                 </p>
                 <div className="button-row">
-                  <a className="button primary" href="/api/backup">
+                  <button
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() =>
+                      action(async () => {
+                        const blob = await api(
+                          "/backup",
+                          undefined,
+                          "GET",
+                          60_000,
+                          true,
+                        );
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = "vocabflow-backup.sqlite";
+                        link.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      })
+                    }
+                  >
                     <Download size={17} />
                     下载完整备份
-                  </a>
+                  </button>
                   <label className="button secondary">
                     恢复完整备份
                     <input

@@ -4,6 +4,7 @@ export async function api(
   body?: unknown,
   method?: string,
   timeoutMs = 60_000,
+  download = false,
 ) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -24,6 +25,7 @@ export async function api(
             : undefined,
       signal: controller.signal,
     });
+    if (response.ok && download) return response.blob();
     const text = await response.text();
     let result;
     try {
@@ -31,7 +33,11 @@ export async function api(
     } catch {
       throw new Error(`接口返回非 JSON 响应（${response.status}）`);
     }
-    if (response.status === 401 && !url.startsWith("/auth/")) sessionExpired();
+    if (
+      response.status === 401 &&
+      (result.code === "SESSION_REQUIRED" || !url.startsWith("/auth/"))
+    )
+      sessionExpired();
     if (!response.ok)
       throw new Error(result.error || `请求失败（${response.status}）`);
     return result;

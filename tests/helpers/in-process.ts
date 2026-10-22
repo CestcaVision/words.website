@@ -6,6 +6,7 @@ export async function invoke(
   route: string,
   options: {
     method?: string;
+    remoteAddress?: string;
     body?: unknown;
     headers?: Record<string, string>;
   } = {},
@@ -24,6 +25,9 @@ export async function invoke(
         chunks.push(Buffer.from(chunk));
         done();
       },
+    });
+    Object.defineProperty(socket, "remoteAddress", {
+      value: options.remoteAddress || "127.0.0.1",
     });
     const req = new IncomingMessage(socket as any);
     req.complete = true;

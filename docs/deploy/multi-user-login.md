@@ -79,7 +79,7 @@ AUTH_COOKIE_SECURE=false
 
 该选项用于短期兼容测试：HTTP 不加密密码、会话或提交的 API Key。实际账号/付费密钥长期使用前应先配置 HTTPS；此 PR 不替你创建域名或证书。前端已集成 HTTP UUID 回退，不需要再次运行旧的 gcp-ip-test.py。
 
-本地开发使用 HTTP 时也显式设置 `AUTH_COOKIE_SECURE=false`。PUBLIC_ORIGIN 不能填写路径或多个来源。代理需保留原始 Host，服务不盲目信任客户端转发的 IP 头。
+本地开发使用 HTTP 时也显式设置 `AUTH_COOKIE_SECURE=false`。PUBLIC_ORIGIN 不能填写路径或多个来源。代理需保留原始 Host，并覆盖 X-Forwarded-For。使用同机反向代理时可设置 `TRUST_PROXY=127.0.0.1,::1`，且应用只监听本机；仅这些明确配置的代理 IP 能提供用于登录限流的客户端地址。默认不信任转发头，不能将公网客户端 IP 配为可信代理。
 
 ## 验证与日常命令
 
