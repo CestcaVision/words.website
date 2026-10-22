@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -195,6 +195,22 @@ test(
       assert.equal(preview.status, 200, preview.text);
       assert.equal(preview.data.rows.length, 1532);
       assert.deepEqual(preview.data.mapping, ["word", "zh"]);
+      const excel = new FormData();
+      excel.append(
+        "file",
+        new Blob([
+          new Uint8Array(
+            readFileSync(
+              path.join(root, "apps/web/public/examples/vocabulary.xlsx"),
+            ),
+          ),
+        ]),
+        "sample.xlsx",
+      );
+      const excelPreview = await call("/import/preview", excel, "POST", alice);
+      assert.equal(excelPreview.status, 200, excelPreview.text);
+      assert.ok(excelPreview.data.rows.length > 0);
+
       const imported = await call(
         "/import",
         { vocab, filename: "migration.csv", ...preview.data },
