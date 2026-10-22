@@ -198,9 +198,9 @@ export function createWorkspace(options: {
       throw new Error("错词专项属于额外练习，不提交正式复习");
     res.json(store.review(input as any));
   });
-  const csv = (rows: any[]) =>
+  const csv = (rows: any[], columns = Object.keys(rows[0] || { word: "" })) =>
     "\uFEFF" +
-    [Object.keys(rows[0] || { word: "" }), ...rows.map(Object.values)]
+    [columns, ...rows.map((row) => columns.map((column) => row[column]))]
       .map((row) =>
         row
           .map(
@@ -215,6 +215,13 @@ export function createWorkspace(options: {
       )
       .join("\r\n");
   app.get("/api/export", (req, res) => {
+    if (req.query.type === "vocabulary") {
+      const rows = store.all("SELECT word,zh FROM words ORDER BY id");
+      return res
+        .type("text/csv; charset=utf-8")
+        .attachment("vocabflow-vocabulary.csv")
+        .send(csv(rows, ["word", "zh"]));
+    }
     const rows =
       req.query.type === "reviews"
         ? store.all(

@@ -359,7 +359,7 @@ function App({
             onClick={() => go("settings")}
           >
             <Settings size={19} />
-            设置与备份
+            设置与导出
           </button>
           <div className="profile">
             <span>{settings.nickname?.slice(0, 1) || "V"}</span>
@@ -401,7 +401,7 @@ function App({
               {page === "study"
                 ? "专注学习"
                 : page === "settings"
-                  ? "设置与备份"
+                  ? "设置与导出"
                   : nav.find((x) => x[0] === page)?.[1]}
             </b>
           </span>
@@ -1754,13 +1754,10 @@ function App({
                 </button>
               </form>
               <section className="panel padding space-top">
-                <h3>数据与完整备份</h3>
+                <h3>单词与释义导出</h3>
                 <p>
-                  实际数据库位置：<code>{status.dataPath}</code>
-                </p>
-                <p>
-                  完整 SQLite 备份包含词库、设置、FSRS 卡片和复习日志；普通 CSV
-                  适合查看与交换单词，不能恢复完整学习状态。
+                  下载当前账号的全部单词和中文释义，CSV 文件仅包含 word、zh
+                  两列。
                 </p>
                 <div className="button-row">
                   <button
@@ -1769,7 +1766,7 @@ function App({
                     onClick={() =>
                       action(async () => {
                         const blob = await api(
-                          "/backup",
+                          "/export?type=vocabulary",
                           undefined,
                           "GET",
                           60_000,
@@ -1778,45 +1775,19 @@ function App({
                         const url = URL.createObjectURL(blob);
                         const link = document.createElement("a");
                         link.href = url;
-                        link.download = "vocabflow-backup.sqlite";
+                        link.download = "vocabflow-vocabulary.csv";
                         link.click();
                         setTimeout(() => URL.revokeObjectURL(url), 1000);
                       })
                     }
                   >
                     <Download size={17} />
-                    下载完整备份
+                    下载词汇 CSV
                   </button>
-                  <label className="button secondary">
-                    恢复完整备份
-                    <input
-                      hidden
-                      type="file"
-                      accept=".sqlite,.db"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (
-                          file &&
-                          confirm(
-                            "用该完整备份替换当前学习空间？会先校验备份，并在 backups 中备份当前数据。请关闭其他学习标签页。",
-                          )
-                        )
-                          action(async () => {
-                            const form = new FormData();
-                            form.append("file", file);
-                            await api("/restore", form);
-                            await refresh();
-                            setCard(null);
-                            setNotice("完整备份恢复成功");
-                          });
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
                 </div>
                 <p className="muted">
-                  运行中通过 SQLite 在线备份生成一致快照。恢复前的自动备份在项目
-                  backups 目录。停止服务请在启动窗口按 Ctrl+C。
+                  可通过“导入词库”重新导入此 CSV。文件不包含账号信息、AI
+                  配置、学习记录或记忆进度。
                 </p>
               </section>
             </>

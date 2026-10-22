@@ -145,6 +145,22 @@ test("real Express routes enforce authentication, CSRF, tenant isolation, provid
       word: { word: "resilient", zh: "有韧性" },
     });
     assert.equal((await aCall("/api/words")).data.length, 1);
+    const vocabularyExport = await aCall("/api/export?type=vocabulary");
+    assert.equal(vocabularyExport.status, 200);
+    assert.match(vocabularyExport.headers["content-type"], /text\/csv/);
+    assert.match(
+      vocabularyExport.headers["content-disposition"],
+      /vocabflow-vocabulary\.csv/,
+    );
+    assert.equal(
+      vocabularyExport.raw,
+      '\uFEFF"word","zh"\r\n"resilient","有韧性"',
+    );
+    const emptyExport = await bCall(
+      "/api/export?type=vocabulary&userId=" + a.data.user.id,
+    );
+    assert.equal(emptyExport.raw, '\uFEFF"word","zh"');
+
     assert.deepEqual(
       (await bCall("/api/words?userId=" + a.data.user.id)).data,
       [],
