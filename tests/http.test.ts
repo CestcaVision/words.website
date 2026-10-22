@@ -131,7 +131,7 @@ async function launch(dir: string, extra: Record<string, string> = {}) {
   if (extra.AI_API_KEY)
     accounts.saveAI(Number(owner.id), {
       baseUrl: extra.AI_BASE_URL!,
-      model: extra.AI_MODEL!,
+      model: extra.AI_MODEL || "fixture-model",
       apiKey: extra.AI_API_KEY,
     });
   accounts.close();
