@@ -70,7 +70,7 @@ if (command === "install") {
   for (let i = 0; i < 50; i++) {
     await new Promise((r) => setTimeout(r, 250));
     try {
-      const response = await fetch(url + "/api/status");
+      const response = await fetch(url + "/api/auth/session");
       if (response.ok) {
         if (process.platform === "win32")
           spawn("cmd.exe", ["/c", "start", "", url], {
