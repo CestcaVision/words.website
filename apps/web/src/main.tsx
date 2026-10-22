@@ -4,6 +4,7 @@ import {
   BookOpen,
   LayoutDashboard,
   Library,
+  LogOut,
   Upload,
   ChartNoAxesCombined,
   Settings,
@@ -337,7 +338,14 @@ function App({
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button className="nav" onClick={() => action(onLogout)}>
+          <button
+            className="nav logout-button"
+            aria-label="退出登录"
+            title="退出登录"
+            disabled={busy}
+            onClick={() => action(onLogout)}
+          >
+            <LogOut size={19} />
             退出登录
           </button>
           <div className="local-note">
