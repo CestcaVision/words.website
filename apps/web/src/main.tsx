@@ -407,7 +407,7 @@ function App({
           </span>
           <div className="top-right">
             <span className="local-dot" />
-            本机运行
+            {status.storage === "d1" ? "云端同步" : "本机运行"}
             <span className="divider" />
             <Flame size={16} />
             {stats.streak} 天连续学习
@@ -1360,7 +1360,7 @@ function App({
             <>
               <Heading
                 title="每一点努力，都有迹可循"
-                sub="所有统计来自本地真实学习记录。答题正确率按选择、拼写和听音答案统计；卡片自评单独记录。"
+                sub="所有统计来自你的真实学习记录。答题正确率按选择、拼写和听音答案统计；卡片自评单独记录。"
               />
               <div className="metric-grid">
                 <Stat title="总单词数（去重）" value={stats.counts.total} />
@@ -1469,7 +1469,11 @@ function App({
             <>
               <Heading
                 title="按你的节奏，安心学习"
-                sub="设置、词库与学习状态保存在本机 SQLite 数据库。"
+                sub={
+                  status.storage === "d1"
+                    ? "设置、词库与学习状态按账号保存在云端 D1 数据库。"
+                    : "设置、词库与学习状态保存在本机 SQLite 数据库。"
+                }
               />
               <form
                 className="panel padding settings-form"
@@ -1497,6 +1501,12 @@ function App({
                   填写你自己的 OpenAI
                   兼容服务。密钥加密保存，不会显示已保存的密钥。
                 </p>
+                {status.aiAllowedHosts?.length > 0 && (
+                  <p className="muted">
+                    可用服务地址：{status.aiAllowedHosts.join("、")}
+                    。需要其他服务时，请联系管理员添加域名。
+                  </p>
+                )}
                 <Field label="Base URL">
                   <input
                     required
@@ -1795,9 +1805,7 @@ function App({
           <footer>
             <Leaf size={14} />
             VocabFlow AI <span>让词汇成为你的语言。</span>
-            <span className="footer-right">
-              LOCAL FIRST · LEARN AT YOUR PACE
-            </span>
+            <span className="footer-right">LEARN AT YOUR PACE</span>
           </footer>
         </div>
       </main>

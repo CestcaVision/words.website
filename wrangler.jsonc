@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vocabflow",
+  "main": "apps/worker/index.ts",
+  "compatibility_date": "2026-10-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vocabflow",
+      "database_id": "a79439ad-4455-4031-a78e-79e1bdd83fa8",
+      "migrations_dir": "database/d1-migrations",
+    },
+  ],
+  "vars": {
+    "AI_ALLOWED_HOSTS": "api.openai.com,api.deepseek.com,api.xiaomimimo.com",
+  },
+}
