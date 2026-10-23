@@ -77,6 +77,14 @@ Cloudflare 会自动安装依赖；不要设置会省略开发依赖的安装选
 
 配置完成后的流程：功能分支 → PR → main → Cloudflare 构建/测试 → D1 迁移 → 发布。GitHub 的合并不受原作者是否接收跨仓库 PR 影响。
 
+自动触发验收时，可将一条仅修改文档的 PR 合并到 main；在 Builds 记录中核对分支为 main、commit 与 GitHub 合并提交一致，并确认部署成功。不要用本地手动发布代替这项验收。发布后可检查公开会话接口：
+
+```bash
+curl -fsS https://vocabflow.cestca.workers.dev/api/auth/session
+```
+
+未带 Cookie 时应返回 `{"user":null}`。网页可访问只代表服务正常，仍须结合新构建和新部署记录，确认自动发布链路。
+
 ## 重新部署当前站点
 
 ```bash
