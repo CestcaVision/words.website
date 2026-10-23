@@ -8,6 +8,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import { root } from "../apps/api/store.ts";
+import {
+  addWordbook,
+  parseCatalog,
+} from "../apps/web/src/wordbooks/catalog.ts";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 test(
   "Cloudflare runtime + D1: isolated accounts, 1532-row CSV, concurrent reviews, encryption, sessions and CSV export",
@@ -295,6 +299,54 @@ test(
         (await call("/words/" + next.data.id, undefined, "DELETE", bob)).status,
         404,
       );
+      const catalog = parseCatalog(
+        JSON.parse(
+          readFileSync(
+            path.join(root, "apps/web/public/wordbooks/catalog.json"),
+            "utf8",
+          ),
+        ),
+      );
+      const officialRows = JSON.parse(
+        readFileSync(
+          path.join(root, "apps/web/public", catalog[0].file),
+          "utf8",
+        ),
+      );
+      const official = await addWordbook({
+        book: catalog[0],
+        rows: officialRows,
+        request: async (route, body, method) => {
+          const result = await call(route, body, method, alice);
+          if (result.status >= 400) throw new Error(result.text);
+          return result.data;
+        },
+        signal: new AbortController().signal,
+        onProgress: () => {},
+      });
+      assert.equal(official.success, 5040);
+      assert.equal(
+        (
+          await call(
+            "/words?vocab=" + official.vocabulary.id,
+            undefined,
+            "GET",
+            alice,
+          )
+        ).data.length,
+        5040,
+      );
+      assert.deepEqual(
+        (
+          await call(
+            "/words?vocab=" + official.vocabulary.id,
+            undefined,
+            "GET",
+            bob,
+          )
+        ).data,
+        [],
+      );
       const last = (await call("/words", undefined, "GET", alice)).data.at(-1);
       assert.equal(
         (await call("/words/" + last.id, undefined, "DELETE", alice)).status,
@@ -304,7 +356,7 @@ test(
         (
           await call(
             "/words",
-            { vocab, word: { word: "replacement", zh: "替代" } },
+            { vocab, word: { word: "brand new fixture word", zh: "替代" } },
             "POST",
             alice,
           )
@@ -313,7 +365,7 @@ test(
       );
       const replaced = (
         await call("/words", undefined, "GET", alice)
-      ).data.find((w: any) => w.word === "replacement");
+      ).data.find((w: any) => w.word === "brand new fixture word");
       assert.equal(replaced.id, last.id, "exercise SQLite numeric ID reuse");
       assert.notEqual(replaced.card_epoch, last.card_epoch);
       assert.equal(
