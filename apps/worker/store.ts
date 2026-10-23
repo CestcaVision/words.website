@@ -257,18 +257,33 @@ export class D1Store {
     );
     return result;
   }
-  async next(vocab = 0, now = new Date()) {
-    const p = await this.plan(now),
-      words = await this.words(vocab);
-    const due = words
-      .filter((w) => w.reps > 0 && w.due <= now.toISOString())
-      .sort(
-        (a, b) =>
-          (a.state === 3 ? 0 : 1) - (b.state === 3 ? 0 : 1) ||
-          a.due.localeCompare(b.due),
+  async next(vocab = 0, now = new Date()): Promise<Row | null> {
+    const day = this.day(now),
+      s = this.settings;
+    const cap = !s.firstDay || s.firstDay === day ? 80 : 200;
+    const saved = await this.one(
+      "SELECT new_done FROM daily_plans WHERE user_id=? AND day=?",
+      this.uid,
+      day,
+    );
+    const select = `SELECT w.*,c.json card,c.version,c.reps,c.lapses,c.due,c.state,c.epoch card_epoch
+      FROM cards c JOIN words w ON w.user_id=c.user_id AND w.id=c.word_id
+      WHERE c.user_id=? AND (?=0 OR EXISTS(SELECT 1 FROM vocabulary_words v WHERE v.user_id=c.user_id AND v.word_id=c.word_id AND v.vocabulary_id=?))`;
+    let word = await this.one(
+      select +
+        " AND c.reps>0 AND c.due<=? ORDER BY CASE WHEN c.state=3 THEN 0 ELSE 1 END,c.due,c.word_id LIMIT 1",
+      this.uid,
+      vocab,
+      vocab,
+      now.toISOString(),
+    );
+    if (!word && (saved?.new_done || 0) < cap)
+      word = await this.one(
+        select + " AND c.reps=0 ORDER BY c.word_id LIMIT 1",
+        this.uid,
+        vocab,
+        vocab,
       );
-    const word =
-      due[0] || (p.newDone < p.cap ? words.find((w) => !w.reps) : null) || null;
     return word ? { ...word, epoch: word.card_epoch } : null;
   }
   async review(
@@ -309,11 +324,26 @@ export class D1Store {
     const s = this.settings;
     if (s.lastAt && now.getTime() < Date.parse(s.lastAt))
       throw new HttpError("检测到时间回拨，请校正系统时间后学习");
-    const p = await this.plan(now);
+    const day = this.day(now),
+      cap = !s.firstDay || s.firstDay === day ? 80 : 200;
+    const saved = await this.one(
+      "SELECT new_done FROM daily_plans WHERE user_id=? AND day=?",
+      this.uid,
+      day,
+    );
+    const p = { day, cap, newDone: saved?.new_done || 0 };
     if (!row.reps && p.newDone >= p.cap)
       throw new HttpError("今日新词已达上限，仍可继续复习");
     if (row.reps && row.due > now.toISOString())
       throw new HttpError("此卡片尚未到期；额外练习不提交正式复习");
+    this.queue(
+      "INSERT INTO daily_plans(user_id,day,new_goal,review_goal) SELECT ?,?,?,count(*) FROM cards WHERE user_id=? AND reps>0 AND due<=? ON CONFLICT(user_id,day) DO UPDATE SET new_goal=excluded.new_goal,review_goal=max(daily_plans.review_goal,excluded.review_goal)",
+      this.uid,
+      p.day,
+      Math.min(s.newGoal, p.cap),
+      this.uid,
+      now.toISOString(),
+    );
     const card = JSON.parse(row.json) as Card;
     card.due = new Date(card.due);
     if (card.last_review) card.last_review = new Date(card.last_review);
@@ -340,7 +370,15 @@ export class D1Store {
         this.uid,
         p.day,
       );
-    const out = { ...result, version },
+    const out = {
+        ...result,
+        version,
+        progress: {
+          day: p.day,
+          cap: p.cap,
+          newDone: p.newDone + (row.reps === 0 ? 1 : 0),
+        },
+      },
       secs = Math.max(0, Math.min(120, Math.round(input.seconds)));
     this.queue(
       "INSERT INTO review_logs(user_id,event_id,word_id,day,at,rating,is_new,seconds,mode,log,result,answer_correct) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -417,7 +455,10 @@ export class D1Store {
       plan: p,
       today,
       counts,
-      difficult: (await this.words(0, "", "difficult")).length,
+      difficult: (await this.one(
+        "SELECT count(*) n FROM cards c WHERE c.user_id=? AND (c.lapses>0 OR EXISTS(SELECT 1 FROM review_logs r WHERE r.user_id=c.user_id AND r.word_id=c.word_id AND (r.rating=1 OR r.answer_correct=0)))",
+        this.uid,
+      ))!.n,
       accuracy,
       answerAccuracy,
       calendar,
