@@ -286,7 +286,15 @@ export class Store {
           "UPDATE daily_plans SET new_done=new_done+1 WHERE day=?",
           p.day,
         );
-      const out = { ...result, version: v };
+      const out = {
+        ...result,
+        version: v,
+        progress: {
+          day: p.day,
+          cap: p.cap,
+          newDone: p.newDone + (row.reps === 0 ? 1 : 0),
+        },
+      };
       const secs = Math.max(0, Math.min(120, Math.round(input.seconds)));
       this.run(
         "INSERT INTO review_logs(event_id,word_id,day,at,rating,is_new,seconds,mode,log,result,answer_correct) VALUES(?,?,?,?,?,?,?,?,?,?,?)",

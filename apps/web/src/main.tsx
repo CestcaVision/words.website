@@ -99,12 +99,16 @@ function App({
       next: "",
       confirm: "",
     });
+  const [studyDirty, setStudyDirty] = useState(false);
+  const statsVersion = useRef(0),
+    choicePool = useRef<Any[] | null>(null);
   const started = useRef(Date.now()),
     active = useRef(0),
     lastTick = useRef(Date.now()),
     eventId = useRef(createEventId()),
     pendingRating = useRef<number | null>(null);
   async function refresh() {
+    const version = ++statsVersion.current;
     const [s, v, se, st, aiConfig] = await Promise.all([
       api("/stats"),
       api("/vocabularies"),
@@ -112,7 +116,7 @@ function App({
       api("/status"),
       api("/account/ai"),
     ]);
-    setStats(s);
+    if (version === statsVersion.current) setStats(s);
     setVocabs(v);
     setSettings(se);
     setStatus(st);
@@ -131,8 +135,15 @@ function App({
     refresh().catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
-    loadWords().catch((e) => setError(e.message));
+    if (page === "library" || page === "difficult")
+      loadWords().catch((e) => setError(e.message));
   }, [vocab, query, filter, page]);
+  useEffect(() => {
+    if (page !== "study" && studyDirty) {
+      setStudyDirty(false);
+      refresh().catch((e) => setError(e.message));
+    }
+  }, [page, studyDirty]);
   useEffect(() => {
     const reset = () => {
       lastTick.current = Date.now();
@@ -211,7 +222,8 @@ function App({
     started.current = Date.now();
     lastTick.current = Date.now();
     if (c && selectedMode === "choice") {
-      const pool = await api("/words");
+      const pool = choicePool.current || (await api("/words"));
+      choicePool.current = pool;
       const distractors = [
         ...new Set(
           pool
@@ -229,6 +241,7 @@ function App({
     }
   }
   async function begin(selected = settings?.mode || "card") {
+    choicePool.current = null;
     setMode(selected);
     const extra = selected === "difficult";
     setPractice(extra);
@@ -244,7 +257,7 @@ function App({
     if (pendingRating.current !== null && pendingRating.current !== rating)
       throw new Error("上一评价结果尚未确认，请重试同一评价或重新加载卡片");
     pendingRating.current = rating;
-    await api("/review", {
+    const saved = await api("/review", {
       eventId: eventId.current,
       wordId: card.id,
       version: card.version,
@@ -254,7 +267,14 @@ function App({
       correct,
       epoch: card.epoch,
     });
-    await refresh();
+    setStudyDirty(true);
+    statsVersion.current++;
+    if (saved.progress)
+      setStats((current: Any) =>
+        current
+          ? { ...current, plan: { ...current.plan, ...saved.progress } }
+          : current,
+      );
     await nextCard();
   }
   async function askAI(wordId?: number) {
