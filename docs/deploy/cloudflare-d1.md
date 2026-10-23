@@ -3,7 +3,7 @@
 ## 本次部署
 
 - 网站：<https://vocabflow.cestca.workers.dev>
-- 代码：`CestcaVision/words.website` 的 `feat/cloudflare-d1` 分支。
+- 代码：`CestcaVision/words.website` 的 `main` 分支。
 - Worker：`vocabflow`，静态前端和 `/api/*` 同域部署，自带 HTTPS。
 - D1：`vocabflow`，数据库 ID `a79439ad-4455-4031-a78e-79e1bdd83fa8`，创建位置提示 APAC。
 - 用户明确选择：**只导入单词与中文释义，重新注册账号**。不迁移 Google Cloud 的旧账号、密码、AI Key、学习进度或日志。
@@ -45,7 +45,7 @@ api.openai.com,api.deepseek.com,api.xiaomimimo.com
 
 ```bash
 cd /你的项目路径/words.website
-git switch feat/cloudflare-d1
+git switch main
 npm ci
 npm run build
 npm run cf:local:init
@@ -53,6 +53,29 @@ npm run cf:dev
 ```
 
 打开 Wrangler 输出的本地地址（通常 `http://localhost:8787`）。本地 D1 使用 `.wrangler/`，不会写线上数据库。`.dev.vars` 在初始化时生成，仅供本地开发；它与线上 Secret 分开，不能提交 Git。已有本地密钥不会自动替换。
+
+## main 自动部署配置
+
+PR #2 已合并到自己的 `main`。生产代码以后以 `CestcaVision/words.website` 的 `main` 为准，功能分支通过 PR 合并后发布。
+
+Cloudflare Git 授权需要在控制台完成。进入 Workers & Pages → vocabflow → Settings → Builds → Connect，选择 GitHub，只授权 `CestcaVision/words.website`，填写：
+
+| 设置              | 值                                                                       |
+| ----------------- | ------------------------------------------------------------------------ |
+| Production branch | `main`                                                                   |
+| Root directory    | `/`（项目根目录）                                                        |
+| Build command     | `npm run build && npm test`                                              |
+| Deploy command    | `npm run cf:migrate:remote && npx wrangler deploy`                       |
+| Node.js           | 项目根目录 `.node-version` 指定 `24`；也可设置构建变量 `NODE_VERSION=24` |
+| 非生产分支构建    | 关闭，不让功能分支自动发布线上                                           |
+
+Cloudflare 会自动安装依赖；不要设置会省略开发依赖的安装选项，因为构建和运行测试需要 TypeScript、tsx 和 Wrangler。不要把运行时的 `AUTH_ENCRYPTION_KEY` 再填到构建变量里，也不要重新生成该密钥。
+
+首次构建应通过构建/测试、D1 迁移和 Worker 发布，再确认线上 `/api/auth/session` 正常。查看构建记录中的 branch、commit 和成功状态；只有仓库连接、首次构建及发布都成功，才能确认自动部署已生效。仅合并 PR 或本地部署不代表已经建立 Git 触发器。
+
+如果迁移阶段返回 D1 权限错误，需要为该构建使用的部署 Token 添加本账号的 D1 编辑权限；Worker 发布权限本身不能代替数据库迁移权限。未来迁移应优先保持与当前线上代码兼容，迁移失败时本命令链不会继续发布 Worker。
+
+配置完成后的流程：功能分支 → PR → main → Cloudflare 构建/测试 → D1 迁移 → 发布。GitHub 的合并不受原作者是否接收跨仓库 PR 影响。
 
 ## 重新部署当前站点
 
@@ -69,7 +92,7 @@ npm run cf:deploy
 
 ```bash
 git status --short
-git pull --ff-only origin feat/cloudflare-d1
+git pull --ff-only origin main
 npm ci
 npm run cf:migrate:remote
 npm run cf:deploy
