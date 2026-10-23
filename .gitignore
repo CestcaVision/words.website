@@ -14,3 +14,11 @@ logs/
 test-results/
 .test-data/
 words/outputs/
+
+# Server-side account encryption key; never commit credentials.
+auth-encryption.key
+
+# Cloudflare local state and secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
