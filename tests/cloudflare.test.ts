@@ -156,6 +156,34 @@ test(
       };
       const alice = await register("cf_alice"),
         bob = await register("cf_bob");
+      const probe = {
+        baseUrl: "https://api.openai.com/v1",
+        model: "test-model",
+      };
+      assert.equal((await call("/account/ai/test", probe)).status, 401);
+      assert.equal(
+        (await call("/account/ai/test", probe, "POST", { ...alice, csrf: "" }))
+          .status,
+        403,
+      );
+      const noKey = await call("/account/ai/test", probe, "POST", alice);
+      assert.equal(noKey.status, 502);
+      assert.match(noKey.data.error, /API Key/);
+      assert.equal(
+        (await call("/account/ai", undefined, "GET", alice)).data.configured,
+        false,
+      );
+      assert.equal(
+        (
+          await call(
+            "/account/ai/test",
+            { ...probe, baseUrl: "https://evil.example/v1" },
+            "POST",
+            alice,
+          )
+        ).status,
+        400,
+      );
       assert.equal(
         (await call("/settings", { ai: true }, "PUT", { ...alice, csrf: "" }))
           .status,

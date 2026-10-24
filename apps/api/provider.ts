@@ -1,3 +1,4 @@
+import { type AITransport } from "../../packages/shared/ai-client.ts";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import https from "node:https";
@@ -98,11 +99,7 @@ export async function requestAI(
     throw new Error("AI 地址解析到不允许的网络");
   const address = addresses[0];
   // Pin the validated DNS answer for this connection, retaining hostname/SNI verification.
-  return await new Promise<{
-    ok: boolean;
-    status: number;
-    json: () => Promise<unknown>;
-  }>((resolve, reject) => {
+  return await new Promise<Response>((resolve, reject) => {
     const send = url.protocol === "https:" ? https.request : http.request;
     const req = send(
       url,
@@ -130,12 +127,12 @@ export async function requestAI(
         res.on("error", reject);
         res.on("end", () => {
           const status = res.statusCode || 0;
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            json: async () =>
-              JSON.parse(Buffer.concat(chunks).toString("utf8")),
-          });
+          resolve(
+            new Response(
+              [204, 205, 304].includes(status) ? null : Buffer.concat(chunks),
+              { status },
+            ),
+          );
         });
       },
     );
@@ -143,3 +140,12 @@ export async function requestAI(
     req.end(options.body);
   });
 }
+
+// Preserve DNS pinning and SSRF checks for the shared AI client.
+export const aiTransport: AITransport = (url, init) =>
+  requestAI(url, {
+    method: String(init.method || "POST"),
+    headers: Object.fromEntries(new Headers(init.headers).entries()),
+    body: String(init.body || ""),
+    signal: init.signal!,
+  });

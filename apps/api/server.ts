@@ -1,3 +1,4 @@
+import { chatCompletion } from "../../packages/shared/ai-client.ts";
 import dotenv from "dotenv";
 import express from "express";
 import { existsSync, mkdirSync, chmodSync } from "node:fs";
@@ -11,7 +12,7 @@ import {
   type Session,
 } from "./auth.ts";
 import { createWorkspace } from "./workspace.ts";
-import { validateBaseUrl } from "./provider.ts";
+import { aiTransport, validateBaseUrl } from "./provider.ts";
 import { root } from "./store.ts";
 import { fileURLToPath } from "node:url";
 
@@ -164,6 +165,32 @@ export function createApplication(
   app.get("/api/account/ai", (_, res) =>
     res.json(accounts.publicAI(res.locals.session.user.id)),
   );
+  app.post("/api/account/ai/test", async (req, res) => {
+    const uid = res.locals.session.user.id;
+    const input = z
+      .object({
+        baseUrl: z.string().trim().min(1).max(1000),
+        model: z.string().trim().min(1).max(200),
+        apiKey: z.string().trim().max(4000).optional(),
+      })
+      .parse(req.body);
+    input.baseUrl = validateBaseUrl(input.baseUrl).href.replace(/\/$/, "");
+    accounts.throttle("ai-test:" + uid, 5);
+    const saved = accounts.aiConfig(uid);
+    if (
+      !input.apiKey &&
+      new URL(saved.baseUrl || input.baseUrl).origin !==
+        new URL(input.baseUrl).origin
+    )
+      throw new Error("更换服务域名后，请重新输入对应 API Key");
+    const started = Date.now();
+    await chatCompletion(
+      { ...input, apiKey: input.apiKey || saved.apiKey },
+      [{ role: "user", content: "Reply with OK only." }],
+      aiTransport,
+    );
+    res.json({ ok: true, latencyMs: Date.now() - started, model: input.model });
+  });
   app.put("/api/account/ai", (req, res) => {
     const input = z
       .object({
