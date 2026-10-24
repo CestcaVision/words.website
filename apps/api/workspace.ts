@@ -405,8 +405,12 @@ export function createWorkspace(options: {
   let lastAi = 0;
   app.post("/api/ai", async (req, res) => {
     const aiConfig = getAiConfig();
-    if (!store.settings().ai || !aiConfig.apiKey)
-      throw new Error("请在设置中启用 AI 并配置服务端 API Key");
+    if (!aiConfig.apiKey)
+      throw new Error(
+        "当前账号尚未保存 API Key，请在个人 AI 服务中填写并保存配置",
+      );
+    if (!store.settings().ai)
+      throw new Error("AI 功能未启用，请在个人 AI 服务中开启并保存 AI 配置");
     const wordId = req.body.wordId ? id(req.body.wordId) : null;
     const word = wordId
       ? store.one("SELECT * FROM words WHERE id=?", wordId)

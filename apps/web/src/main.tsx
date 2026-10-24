@@ -1538,8 +1538,13 @@ function App({
                     );
                     setProvider(saved);
                     setProviderKey("");
+                    await api("/settings", { ai: settings.ai }, "PUT");
                     await refresh();
-                    setNotice("个人 AI 配置已保存");
+                    setNotice(
+                      settings.ai
+                        ? "AI 配置已保存，AI 功能已启用"
+                        : "AI 配置已保存，AI 功能已关闭",
+                    );
                   });
                 }}
               >
@@ -1554,6 +1559,24 @@ function App({
                     。需要其他服务时，请联系管理员添加域名。
                   </p>
                 )}
+                <Field label="启用 AI 功能">
+                  <select
+                    value={String(settings.ai)}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        ai: e.target.value === "true",
+                      })
+                    }
+                  >
+                    <option value="false">关闭</option>
+                    <option value="true">主动触发时调用</option>
+                  </select>
+                </Field>
+                <p className="muted">
+                  开启后仅在你点击生成时调用服务商；请点击下方“保存 AI
+                  配置”使开关生效。
+                </p>
                 <Field label="Base URL">
                   <input
                     required
@@ -1599,7 +1622,7 @@ function App({
                 {connectionResult && <p role="status">{connectionResult}</p>}
                 <p role="status">
                   密钥：{provider.configured ? "已配置" : "未配置"}
-                  。保存配置后，还需在下方开启 AI 功能。
+                  。AI 开关与配置一起保存。
                 </p>
                 <div className="button-row">
                   <button className="primary" disabled={busy}>
@@ -1619,7 +1642,7 @@ function App({
                             ...(providerKey ? { apiKey: providerKey } : {}),
                           });
                           setConnectionResult(
-                            `连接成功：${result.model}，耗时 ${(result.latencyMs / 1000).toFixed(1)} 秒。${settings.ai ? "" : "正式使用前请开启下方 AI 功能。"}`,
+                            `连接成功：${result.model}，耗时 ${(result.latencyMs / 1000).toFixed(1)} 秒。${settings.ai ? "" : "正式使用前请选择“启用 AI 功能”并保存 AI 配置。"}`,
                           );
                         } catch (error) {
                           setConnectionResult(
@@ -1820,20 +1843,6 @@ function App({
                     >
                       <option value="light">浅色</option>
                       <option value="dark">深色</option>
-                    </select>
-                  </Field>
-                  <Field label="AI 功能">
-                    <select
-                      value={String(settings.ai)}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          ai: e.target.value === "true",
-                        })
-                      }
-                    >
-                      <option value="false">关闭</option>
-                      <option value="true">主动触发时调用</option>
                     </select>
                   </Field>
                 </div>
