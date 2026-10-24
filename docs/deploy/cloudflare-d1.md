@@ -34,7 +34,7 @@ D1 查询是异步的。涉及多步学习更新的请求使用 D1 `batch()` 事
 Workers 版只允许管理员批准的公网 HTTPS 服务域名，且不跟随重定向。当前 `wrangler.jsonc` 中 `AI_ALLOWED_HOSTS` 为：
 
 ```text
-api.openai.com,api.deepseek.com,api.xiaomimimo.com
+api.openai.com,api.deepseek.com,api.xiaomimimo.com,token-plan-cn.xiaomimimo.com
 ```
 
 要使用其他 OpenAI 兼容服务，由管理员先确认是可信公网服务，再将**精确域名**加入该配置并重新部署。用户仍可自行填写该服务的 Base URL 路径、模型及自己的 Key；此列表不配置共享 Key，也不允许通配符。
