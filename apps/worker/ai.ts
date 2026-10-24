@@ -37,8 +37,12 @@ export async function generateAI(
   input: { wordId?: number; kind?: string },
 ) {
   const config = await auth.config(store.uid, true);
-  if (!store.settings.ai || !config.apiKey)
-    throw new HttpError("请在设置中启用 AI 并填写个人 API Key");
+  if (!config.apiKey)
+    throw new HttpError(
+      "当前账号尚未保存 API Key，请在个人 AI 服务中填写并保存配置",
+    );
+  if (!store.settings.ai)
+    throw new HttpError("AI 功能未启用，请在个人 AI 服务中开启并保存 AI 配置");
   const base = providerURL(config.baseUrl, env.AI_ALLOWED_HOSTS);
   const word = input.wordId
     ? await store.one(
