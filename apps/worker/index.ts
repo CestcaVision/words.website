@@ -3,7 +3,7 @@ import type { Env, Row } from "./types.ts";
 import { HttpError } from "./types.ts";
 import { Auth, usernameSchema, passwordSchema } from "./auth.ts";
 import { D1Store } from "./store.ts";
-import { providerURL, generateAI } from "./ai.ts";
+import { providerURL, generateAI, testAIConnection } from "./ai.ts";
 import { readImport, fields } from "../api/importer.ts";
 import { enrichmentSchema } from "../api/enrichment.ts";
 const json = (data: unknown, status = 200) =>
@@ -183,6 +183,16 @@ async function api(request: Request, env: Env) {
       await auth.changePassword(session, p.currentPassword, p.password),
       url,
     );
+  }
+  if (path === "/api/account/ai/test" && method === "POST") {
+    const inputConfig = z
+      .object({
+        baseUrl: z.string().trim().min(1).max(1000),
+        model: z.string().trim().min(1).max(200),
+        apiKey: z.string().trim().max(4000).optional(),
+      })
+      .parse(input);
+    return json(await testAIConnection(auth, env, session.id, inputConfig));
   }
   if (path === "/api/account/ai") {
     if (method === "GET") return json(await auth.config(session.id));

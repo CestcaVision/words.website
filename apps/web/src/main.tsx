@@ -99,6 +99,7 @@ function App({
       next: "",
       confirm: "",
     });
+  const [connectionResult, setConnectionResult] = useState("");
   const [studyDirty, setStudyDirty] = useState(false);
   const statsVersion = useRef(0),
     choicePool = useRef<Any[] | null>(null);
@@ -1559,18 +1560,20 @@ function App({
                     type="url"
                     placeholder="https://api.example.com/v1"
                     value={provider.baseUrl}
-                    onChange={(e) =>
-                      setProvider({ ...provider, baseUrl: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setConnectionResult("");
+                      setProvider({ ...provider, baseUrl: e.target.value });
+                    }}
                   />
                 </Field>
                 <Field label="模型名称">
                   <input
                     required
                     value={provider.model}
-                    onChange={(e) =>
-                      setProvider({ ...provider, model: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setConnectionResult("");
+                      setProvider({ ...provider, model: e.target.value });
+                    }}
                   />
                 </Field>
                 <Field
@@ -1584,9 +1587,16 @@ function App({
                     type="password"
                     autoComplete="off"
                     value={providerKey}
-                    onChange={(e) => setProviderKey(e.target.value)}
+                    onChange={(e) => {
+                      setConnectionResult("");
+                      setProviderKey(e.target.value);
+                    }}
                   />
                 </Field>
+                <p className="muted">
+                  测试会发送一条简短请求，可能消耗少量服务商额度；使用当前输入，留空密钥则使用已保存密钥，不会自动保存或修改学习记录。
+                </p>
+                {connectionResult && <p role="status">{connectionResult}</p>}
                 <p role="status">
                   密钥：{provider.configured ? "已配置" : "未配置"}
                   。保存配置后，还需在下方开启 AI 功能。
@@ -1594,6 +1604,32 @@ function App({
                 <div className="button-row">
                   <button className="primary" disabled={busy}>
                     保存 AI 配置
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || !provider.baseUrl || !provider.model}
+                    onClick={() =>
+                      action(async () => {
+                        setConnectionResult("");
+                        try {
+                          const result = await api("/account/ai/test", {
+                            baseUrl: provider.baseUrl,
+                            model: provider.model,
+                            ...(providerKey ? { apiKey: providerKey } : {}),
+                          });
+                          setConnectionResult(
+                            `连接成功：${result.model}，耗时 ${(result.latencyMs / 1000).toFixed(1)} 秒。${settings.ai ? "" : "正式使用前请开启下方 AI 功能。"}`,
+                          );
+                        } catch (error) {
+                          setConnectionResult(
+                            error instanceof Error ? error.message : "测试失败",
+                          );
+                        }
+                      })
+                    }
+                  >
+                    {busy ? "请稍候…" : "测试连接"}
                   </button>
                   {provider.configured && (
                     <button
